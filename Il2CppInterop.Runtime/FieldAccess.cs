@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Il2CppInterop.Common;
 using Il2CppInterop.Runtime.InteropTypes;
+using Il2CppInterop.Runtime.Structs;
 using Microsoft.Extensions.Logging;
 
 namespace Il2CppInterop.Runtime;
@@ -55,6 +56,23 @@ public static unsafe class FieldAccess
 
     // THREAD_STATIC_FIELD_OFFSET in libil2cpp
     private const uint ThreadStaticFieldOffset = unchecked((uint)-1);
+
+    /// <summary>
+    /// Allocates the value of a static field that the game's build removed from its class, which only restored code uses.
+    /// </summary>
+    /// <remarks>
+    /// Il2Cpp has no storage for such a field. Its value is kept in the elements of an array of objects, which Il2Cpp's garbage
+    /// collector scans for references and does not move, and a GC handle keeps the array alive. The value starts zeroed.
+    /// </remarks>
+    /// <returns>The address of the value.</returns>
+    public static nint AllocateStaticFieldStorage<T>() where T : IIl2CppType<T>
+    {
+        var size = typeof(T).IsValueType ? T.Size : IntPtr.Size;
+        var slots = Math.Max(1, (size + IntPtr.Size - 1) / IntPtr.Size);
+        var array = IL2CPP.il2cpp_array_new(Il2CppType.GetClassPointer<Il2CppSystem.Object>(), (ulong)slots);
+        IL2CPP.il2cpp_gchandle_new(array, false);
+        return array + sizeof(Il2CppObject) + sizeof(void*) /* bounds */ + sizeof(nuint) /* max_length */;
+    }
 
     public static T? GetInstanceFieldValue<T>(Object instance, int fieldOffset) where T : IIl2CppType<T>
     {

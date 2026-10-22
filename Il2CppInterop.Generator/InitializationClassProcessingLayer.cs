@@ -31,6 +31,7 @@ public class InitializationClassProcessingLayer : Cpp2IlProcessingLayer
         var fieldAccessClass = appContext.ResolveTypeOrThrow(typeof(FieldAccess));
         var getFieldInfo = fieldAccessClass.GetMethodByName(nameof(FieldAccess.GetFieldInfo));
         var getFieldOffset = fieldAccessClass.GetMethodByName(nameof(FieldAccess.GetFieldOffset));
+        var allocateStaticFieldStorage = fieldAccessClass.GetMethodByName(nameof(FieldAccess.AllocateStaticFieldStorage));
 
         var resolveICall = appContext.ResolveTypeOrThrow(typeof(RuntimeInvoke)).GetMethodByName(nameof(RuntimeInvoke.ResolveICall));
 
@@ -213,7 +214,21 @@ public class InitializationClassProcessingLayer : Cpp2IlProcessingLayer
                             continue;
 
                         if (field.IsUnstripped && !type.IsUnstripped)
+                        {
+                            // A static field that the game's build removed from the class has no storage in Il2Cpp.
+                            if (field.ConstantValue is null)
+                            {
+                                var dataAddressStore = initializationType.InjectFieldContext(
+                                    $"FieldData_{index}",
+                                    appContext.SystemTypes.SystemIntPtrType,
+                                    FieldAttributes.Assembly | FieldAttributes.Static | FieldAttributes.InitOnly);
+                                field.DataAddressStorage = dataAddressStore;
+
+                                instructions.Add(new Instruction(CilOpCodes.Call, allocateStaticFieldStorage.MakeGenericInstanceMethod(field.FieldType)));
+                                instructions.Add(new Instruction(CilOpCodes.Stsfld, dataAddressStore));
+                            }
                             continue;
+                        }
 
                         field.InitializationClassIndex = index;
 
